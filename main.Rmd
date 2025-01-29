@@ -1,0 +1,612 @@
+---
+title: "MGSC661 Final Project"
+author: "Maggie Huang"
+date: "2024-11-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+data <- read.csv("/Users/maggiehuang/Desktop/MGSC661_Final_Project_Chocolate/Chocolate_bar_ratings.csv")
+```
+
+# Data Overview
+```{r}
+library(skimr)
+head(data)
+skim(data)
+```
+
+# Data Cleaning
+```{r}
+# check if there's any duplicated data
+anyDuplicated(data)
+```
+
+```{r}
+# rename the columns
+colnames(data) <- c("company","specific_bean_origin","review_reference_number","review_year","cocoa_percent","company_location","rating","bean_type","broad_bean_origin")
+
+data
+
+# copy the original data for future reference
+og_data <- data
+```
+
+```{r}
+# format 'cocoa_percent'
+data$cocoa_percent <- sapply(data$cocoa_percent, function(x) gsub("%", "", x))  # remove "%"
+data$cocoa_percent <- as.double(data$cocoa_percent)  # convert to numeric
+data$cocoa_percent <- round(data$cocoa_percent / 100, 2)  # divide by 100 and round to 2 decimal places
+
+data
+```
+
+```{r}
+library(stringr)
+
+# replace the blank fileds in bean_type and broad_bean_origin with NA
+data[, c(8,9)] <- sapply(data[,c(8,9)], str_trim)
+  is.na(data) <- data==''
+
+# checking the percent of NAs
+colMeans(is.na(data)) 
+head(data)
+
+# Remove rows where 'broad_bean_origin' is NA
+data1 <- data[!is.na(data$broad_bean_origin), ]
+```
+
+```{r}
+# Reset row names to NULL to ensure default numbering
+row.names(data1) <- NULL
+
+# Remove any unintended 'row_id' column if present
+data1 <- data1[, !colnames(data1) %in% "row_id"]
+
+data1
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+# clean and format the 'broad_bean_origin' column 
+# it has a lot of inconsistencies, like different name abbreviations for the same country, wrong spelling of the country name, and having multiple countries in one cell
+
+data_cleaned <- data1 %>%
+  # Separate 'broad_bean_origin' into multiple columns based on commas
+  separate(broad_bean_origin, 
+           into = paste("broad_bean_origin", 1:5, sep = "_"), sep = ",", fill = "right") %>%
+  # Gather the separated columns into key-value pairs
+  gather(key = "col", value = "broad_bean_origin", broad_bean_origin_1:broad_bean_origin_5) %>%
+  # Remove extra whitespace
+  mutate(broad_bean_origin = str_squish(broad_bean_origin)) %>%
+  # Replace inconsistent country names with standardized names
+  mutate(
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^D+[a-z]*\\.? ?R+[a-z]*\\.?"), "Dominican Republic"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^V+en[a-z]*\\.?"), "Venezuela"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^Mad[a-z]*\\.?"), "Madagascar"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^N+ic[a-z]*\\.?"), "Nicaragua"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^E+cu[a-z]*\\.?"), "Ecuador"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^P+[a-z]? ?N[a-z]? ?G+[a-z]*\\.?"), "Papua New Guinea"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^P+eru(.*)"), "Peru"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^C+arr?ib[e]*an(.*)"), "Caribbean"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^T+rinidad(.*)"), "Trinidad-Tobago"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^T+obago(.*)"), "Trinidad-Tobago"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^S+ao(.*)"), "Sao Tome-Principe"),
+    broad_bean_origin = replace(broad_bean_origin, str_detect(broad_bean_origin, "^P+rincipe(.*)"), "Sao Tome-Principe")
+  ) %>%
+  # Additional replacements for specific entries
+  mutate(
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "nacional)", "Peru"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Pangoa", "Peru"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Mex", "Mexico"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Martinique", "France"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Haw.", "Hawaii"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Guat.", "Guatemala"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Gre.", "Grenada"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Bali", "Indonesia"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Brasil", "Brazil"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "C. Am.", "Central and S. America"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "South America", "Central and S. America"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "West Africa", "Africa"),
+    broad_bean_origin = replace(broad_bean_origin, broad_bean_origin == "Cost Rica", "Costa Rica"),
+  ) %>%
+  # Separate rows where multiple countries are joined with '&'
+  separate_rows(broad_bean_origin, sep = "&") %>%
+  # Remove any spaces before and after the values
+  mutate(broad_bean_origin = str_squish(broad_bean_origin)) %>%
+  # Remove unnecessary columns and missing values
+  select(-col) %>%
+  filter(broad_bean_origin != "") 
+
+data_cleaned
+```
+
+```{r}
+# save the cleaned data as a csv
+# write.csv(data_cleaned, "/Users/maggiehuang/Desktop/MGSC661_Final_Project_Chocolate/chocolate_bar_rating_cleaned.csv", row.names = FALSE)
+```
+
+# EDA
+```{r}
+library(dplyr)
+library(rworldmap)
+
+# visualize the distribution of company_location and broad_bean_origin
+
+commap <- group_by(data_cleaned, company_location)
+commap1 <- summarise(commap,  count=n())
+map1 <- joinCountryData2Map(commap1, joinCode="NAME", nameJoinColumn="company_location")
+
+omap <- group_by(data_cleaned, broad_bean_origin)
+omap1 <- summarise(omap,  count=n())
+map2 <- joinCountryData2Map(omap1, joinCode="NAME", nameJoinColumn="broad_bean_origin")
+
+mapCountryData(map1, nameColumnToPlot="count", mapTitle="Company Distribution" , colourPalette = "negpos8")
+mapCountryData(map2, nameColumnToPlot="count", mapTitle="Broad Bean Origin Distribution" , colourPalette = "negpos8")
+
+# Save the first map with higher resolution
+png(filename = "Company Distribution.png", width = 2000, height = 1500, res = 300)
+mapCountryData(map1, nameColumnToPlot = "count", mapTitle = "Company Distribution", colourPalette = "negpos8")
+dev.off()
+
+# Save the second map with higher resolution
+png(filename = "Broad Bean Origin Distribution.png", width = 2000, height = 1500, res = 300)
+mapCountryData(map2, nameColumnToPlot = "count", mapTitle = "Broad Bean Origin Distribution", colourPalette = "negpos8")
+dev.off()
+```
+
+```{r}
+library(ggplot2)
+
+# average rating by broad_bean_origin
+
+loca <- group_by(data_cleaned, broad_bean_origin)
+good <- summarise(loca,  count=n(),
+                  rate1= mean(rating))
+good1<- arrange(good, desc(rate1))
+
+ggplot(good1, aes(x = reorder(broad_bean_origin, rate1), y = rate1)) +
+  geom_point(aes(size = count, colour = factor(rate1)), alpha = 1/2) +
+  theme_minimal(base_size = 9) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1), 
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5) # center the title
+  ) +
+  labs(
+    x = "Broad Bean Origin", 
+    y = "Rating", 
+    title = "Average Rating by Broad Bean Origin"
+  )
+
+ggsave("Average Rating by Broad Bean Origin.png", width = 7, height = 5)
+```
+
+```{r}
+# average rating by company (displaying only the top and bottom 30 companies)
+
+# Group by company and calculate average rating
+comp <- group_by(data_cleaned, company)
+good <- summarise(comp, count = n(), rate1 = mean(rating))
+
+# Top 30 companies by average rating (descending order)
+top_30 <- good %>%
+  arrange(desc(rate1)) %>%
+  slice_max(order_by = rate1, n = 30)
+
+# Bottom 30 companies by average rating (ascending order)
+bottom_30 <- good %>%
+  arrange(rate1) %>%
+  slice_min(order_by = rate1, n = 30)
+
+# top 30 companies (descending order)
+ggplot(top_30, aes(x = reorder(company, -rate1), y = rate1)) +
+  geom_point(aes(size = count, colour = factor(rate1)), alpha = 1/2) +
+  theme_minimal(base_size = 9) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1), 
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5) # center the title
+  ) +
+  labs(
+    x = "Company", 
+    y = "Average Rating", 
+    title = "Average Rating by Top 30 Companies (Descending)"
+  )
+
+ggsave("Average Rating by Top 30 Companies (Descending).png", width = 7, height = 5)
+
+
+# bottom 30 companies (ascending order)
+ggplot(bottom_30, aes(x = reorder(company, rate1), y = rate1)) +
+  geom_point(aes(size = count, colour = factor(rate1)), alpha = 1/2) +
+  theme_minimal(base_size = 9) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1), 
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5) # center the title
+  ) +
+  labs(
+    x = "Company", 
+    y = "Average Rating", 
+    title = "Average Rating by Bottom 30 Companies (Ascending)"
+  )
+
+ggsave("Average Rating by Bottom 30 Companies (Ascending).png", width = 7, height = 5)
+```
+
+```{r}
+# average rating by bean_type
+
+type <- group_by(data_cleaned, bean_type)
+good <- summarise(type, count = n(),
+                  rate1 = mean(rating))
+good1 <- arrange(good, desc(rate1))
+
+ggplot(good1, aes(x = reorder(bean_type, -rate1), y = rate1)) +
+  geom_point(aes(size = count, colour = factor(rate1)), alpha = 1/2) +
+  theme_minimal(base_size = 12) +  # Adjusted base size for better readability
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1), 
+    legend.position = "none",
+    plot.title = element_text(hjust = 0.5) # center the title
+  ) +
+  labs(
+    x = "Bean Type", 
+    y = "Average Rating", 
+    title = "Average Rating by Bean Type"
+  )
+
+ggsave("Average Rating by Bean Type.png", width = 7, height = 5)
+```
+
+```{r}
+# rating by cocoa percentage + broad_bean_origin
+
+ggplot(data_cleaned, aes(x = cocoa_percent, y = rating)) +
+  geom_point(aes(colour = factor(broad_bean_origin))) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    legend.key.width = unit(0.2, "cm"),
+    legend.key.height = unit(0.2, "cm"),
+    plot.title = element_text(hjust = 0.5), # center the title
+    legend.title = element_text(angle = 90) # rotate the legend title
+  ) +
+  xlab("Cocoa Percentage") +
+  ylab("Rating") +
+  ggtitle("Rating by Cocoa Percentage and Broad Bean Origin") +
+  labs(colour = "Broad Bean Origin")
+
+ggsave("Rating by Cocoa Percentage and Broad Bean Origin.png", width = 7, height = 5)
+```
+
+Jitter Effect: The geom_jitter() function adds a small amount of random noise to the data points for better visibility of overlapping points. If your data includes ratings exactly at the boundaries (e.g., 5), the jitter may push some points slightly beyond 5. This is a visual artifact rather than an issue with the data itself.
+```{r}
+# cocoa_percent by rating
+
+plot <- ggplot(data_cleaned)+
+  geom_point(aes(x=rating,y=cocoa_percent))+
+  labs(x = 'Rating', y = 'Cocoa Percentage', title = 'Cocoa Percentage per Rating')+
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  geom_jitter(aes(x=rating, y=cocoa_percent), width = 0.1, height = 0)
+
+plot+geom_smooth(aes(x=rating,y=cocoa_percent))
+
+ggsave("Cocoa Percentage per Rating.png", width = 7, height = 5)
+```
+
+```{r}
+# rating by review_year
+
+ggplot(data_cleaned, aes(x = factor(review_year), y = rating)) +
+  geom_boxplot(aes(fill = factor(review_year)), show.legend = FALSE) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) + # center the title 
+  xlab("Review Year") +
+  ylab("Rating") +
+  ggtitle("Rating by Review Year")
+
+ggsave("Rating by Review Year.png", width = 7, height = 5)
+```
+
+```{r}
+# number of reviews by cocoa_percent 
+
+counts1 <- data_cleaned %>%
+  group_by(cocoa_percent) %>%
+  summarize(count = n())
+
+print(counts1)
+
+ggplot(data_cleaned, aes(x = cocoa_percent)) +
+  geom_histogram(bins = 60, aes(fill = ..x..)) +
+  xlab('Cocao Percentage') +
+  ylab('Number of Reviews') +
+  scale_fill_gradient(trans = 'reverse', low = "blue", high = "red") +
+  scale_x_continuous(breaks = seq(0, 1, by = 0.1)) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  labs(title = "Number of Reviews by Cocao Percentage")
+
+ggsave("Number of Reviews by Cocao Percentage.png", width = 7, height = 5)
+```
+
+```{r}
+# number of reviews by company (displaying top 30)
+
+top_companies <- data_cleaned %>% 
+  group_by(company) %>% 
+  summarise(Count = n()) %>%
+  top_n(30, wt = Count) %>%
+  arrange(desc(Count))
+
+ggplot(top_companies, aes(x = reorder(company, -Count), y = Count, fill = Count)) +
+  geom_bar(stat = "identity", aes(color = I('black')), size = 0.1) +
+  xlab('Company') +
+  ylab('Number of Reviews') +
+  scale_fill_gradient(low = "skyblue", high = "darkblue") + 
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(title = "Number of Reviews by Company (Top 30)")
+
+ggsave("Number of Reviews by Company (Top 30).png", width = 7, height = 5)
+```
+
+# Random Forest
+```{r}
+library(ranger)
+library(caret)
+
+# Tune the hyperparameters for the random forest model 
+
+# Split the data into training (60%), validation (20%), and testing (20%) sets
+set.seed(123) 
+# Initial split to create training data
+trainIndex <- createDataPartition(data_cleaned$rating, p = 0.6, list = FALSE)
+train_data <- data_cleaned[trainIndex, ]
+temp_data <- data_cleaned[-trainIndex, ]
+# Split the remaining data equally into validation and test sets
+validationIndex <- createDataPartition(temp_data$rating, p = 0.5, list = FALSE)
+validation_data <- temp_data[validationIndex, ]
+test_data <- temp_data[-validationIndex, ]
+
+hyper_grid <- expand.grid(
+  mtry = c(2,3,4,5, 6),           # Number of variables randomly sampled at each split (< the number of predictors)
+  min.node.size = c(1, 2, 3, 4,5)    # Minimal node size
+)
+
+# Initialize an empty dataframe to store results
+results <- data.frame()
+
+# Loop over hyperparameters
+for(i in 1:nrow(hyper_grid)) {
+  # Extract hyperparameters
+  params <- hyper_grid[i, ]
+  cat("Training model with mtry =", params$mtry, "and min.node.size =", params$min.node.size, "\n")
+  
+  # Train the Random Forest model using ranger
+  rf_model <- ranger(
+    formula = rating ~ ., 
+    data = train_data,
+    num.trees = 500,
+    mtry = params$mtry,
+    min.node.size = params$min.node.size,
+    importance = "impurity",
+    na.action = "na.omit")
+  
+  # Predict on the validation set
+  val_predictions <- predict(rf_model, data = validation_data)$predictions
+  # Calculate RMSE on validation set
+  val_rmse <- sqrt(mean((val_predictions - validation_data$rating)^2))
+  
+  # Store the results
+  results <- rbind(results, data.frame(
+    mtry = params$mtry,
+    min.node.size = params$min.node.size,
+    RMSE = val_rmse
+  ))
+}
+
+# Find the best hyperparameters
+best_params <- results[which.min(results$RMSE), ]
+
+cat("Best Hyperparameters:\n")
+print(best_params)
+```
+
+```{r}
+# Retrain the model using the best hyper parameters
+
+# Combine training and validation data
+final_train_data <- rbind(train_data, validation_data)
+
+# Train the final model using the best hyperparameters
+final_rf_model <- ranger(
+  formula = rating ~ ., 
+  data = final_train_data,
+  num.trees = 500,
+  mtry = best_params$mtry,
+  min.node.size = best_params$min.node.size,
+  importance = "impurity",
+  na.action = "na.omit"
+)
+
+# Predict on the test set
+test_predictions <- predict(final_rf_model, data = test_data)$predictions
+# Calculate RMSE on test set
+test_rmse <- sqrt(mean((test_predictions - test_data$rating)^2))
+cat("Test RMSE:", test_rmse, "\n")
+```
+
+```{r}
+# Feature importance
+
+# Access feature importance
+importance <- as.data.frame(final_rf_model$variable.importance)
+
+# Normalize importance values to percentages
+importance$Percentage <- (importance[,1] / sum(importance[,1])) * 100
+
+# Add feature names
+importance$Features <- rownames(importance)
+
+# Rename the columns for clarity
+colnames(importance) <- c("Importance", "Percentage", "Features")
+
+# Sort importance for better visualization
+importance <- importance[order(-importance$Percentage), ]
+
+# Plot feature importance with percentage labels
+ggplot(importance, aes(x = reorder(Features, Percentage), y = Percentage)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = paste0(round(Percentage, 2), "%")), 
+            hjust = -0.1, 
+            size = 4) +
+  coord_flip() +
+  xlab("Features") +
+  ylab("Importance Percentage") +
+  ggtitle("Feature Importance from Random Forest Model") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  expand_limits(y = c(0, max(importance$Percentage) + 5))  # Add extra space for labels
+```
+
+# Clustering 
+```{r}
+library(VIM)
+
+# Impute the data set (using KNN Imputation) since clustering models cannot handle missing data
+
+data_imputed <- kNN(data_cleaned)
+data_imputed <- data_imputed[, c("company", "specific_bean_origin","review_year", "cocoa_percent", "company_location", "rating", "bean_type", "broad_bean_origin")]
+data_imputed
+```
+
+```{r}
+library(cluster)
+library(clustMixType)
+
+# Find the optimal number of clusters for k-prototype 
+
+# Convert categorical columns to factors
+data_imputed$company <- as.factor(data_imputed$company)
+data_imputed$company_location <- as.factor(data_imputed$company_location)
+data_imputed$specific_bean_origin <- as.factor(data_imputed$specific_bean_origin)
+data_imputed$bean_type <- as.factor(data_imputed$bean_type)
+data_imputed$broad_bean_origin <- as.factor(data_imputed$broad_bean_origin)
+data_imputed$review_year <- as.factor(data_imputed$review_year) # factorize review_year as well
+
+
+set.seed(123)  
+kproto_model <- kproto(data_imputed, k = 3)  
+clusters <- kproto_model$cluster  # Extract cluster assignments
+gower_dist <- daisy(data_imputed, metric = "gower") # Compute Gower distance matrix
+silhouette_width <- silhouette(clusters, gower_dist) # Compute silhouette width
+avg_silhouette <- mean(silhouette_width[, 3])  # Calculate the average silhouette width (3rd column contains silhouette scores)
+avg_sil_width <- numeric()
+
+for (k in 2:10) {  # Test clusters from 2 to 10
+  clusters <- cutree(hclust_model, k = k)  
+  sil <- silhouette(clusters, dist = gower_dist)
+  avg_sil_width[k] <- mean(sil[, 3])
+}
+
+# Plot average silhouette widths
+plot(2:10, avg_sil_width[2:10], type = "b", xlab = "Number of Clusters (k)", ylab = "Average Silhouette Width")
+```
+
+```{r}
+# Apply k-prototype with the optimal the number of clusters (k = 4)
+
+optimal_clusters <- cutree(hclust_model, k = 4)  
+data_imputed$cluster <- optimal_clusters
+
+kproto_model <- kproto(data_imputed, k = 4)  
+data_imputed$cluster <- kproto_model$cluster
+
+# Summarize the mean of numeric variables 
+numeric_summary <- data_imputed %>%
+  group_by(cluster) %>%
+  summarize(across(where(is.numeric), \(x) mean(x, na.rm = TRUE)))
+
+# Summarize categorical variables (e.g., mode, frequency count)
+categorical_summary <- data_imputed %>%
+  group_by(cluster) %>%
+  summarize(across(where(is.factor), \(x) names(sort(table(x), decreasing = TRUE)[1])))
+
+# Combine summaries 
+combined_summary <- list(numeric_summary, categorical_summary)
+combined_summary
+```
+
+```{r}
+# examine the size (the number of observations) in each cluster
+
+cluster_sizes <- data_imputed %>%
+  count(cluster) %>%
+  arrange(desc(n))  # sort by cluster size
+
+cluster_sizes
+```
+
+```{r}
+# Box Plots for all the numerical variables by cluster
+
+numeric_vars <- names(select(data_imputed, where(is.numeric)))
+
+# Create a list to store plots
+boxplot_list <- list()
+
+for (var in numeric_vars) {
+  p <- ggplot(data_imputed, aes(x = factor(cluster), y = .data[[var]])) +
+    geom_boxplot() +
+    labs(title = paste(var, "Distribution by Cluster"), x = "Cluster", y = var)
+  
+  boxplot_list[[var]] <- p
+}
+
+boxplot_list[["rating"]]
+boxplot_list[["cocoa_percent"]]
+```
+
+```{r}
+library(forcats)
+
+# Bar charts for all the categorical variables by cluster (only top 10 categories are displayed)
+
+categorical_vars <- names(select(data_imputed, where(is.factor)))
+
+barplot_list <- list()
+
+for (var in categorical_vars) {
+  data_temp <- data_imputed %>%
+    mutate(!!sym(var) := fct_lump_n(.data[[var]], n = 10, other_level = "Other"))
+  
+  p <- ggplot(data_temp, aes(x = factor(cluster), fill = .data[[var]])) +
+    geom_bar(position = "fill") +
+    labs(title = paste("Proportion of", var, "by Cluster (Top 10 + Other)"),
+         x = "Cluster",
+         y = "Proportion") +
+    scale_y_continuous(labels = scales::percent)
+  
+  barplot_list[[var]] <- p
+}
+
+barplot_list[["company"]]
+barplot_list[["company_location"]]
+barplot_list[["specific_bean_origin"]]
+barplot_list[["broad_bean_origin"]]
+barplot_list[["review_year"]]
+barplot_list[["bean_type"]]
+```
+
+
